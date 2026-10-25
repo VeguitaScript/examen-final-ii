@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -10,32 +11,45 @@ type Resultado = {
   nota: number;
   porcentaje: number;
   estado: string;
-  fecha_finalizacion: string;
+  fecha_finalizacion: string | null;
 };
 
 type RespuestaAlumno = {
   numero: number;
   pregunta: string;
-  respuesta_marcada: string;
-  respuesta_correcta: string;
+  respuesta_marcada: string | null;
+  alternativa_marcada: string | null;
+  respuesta_correcta: string | null;
+  alternativa_correcta: string | null;
   es_correcta: boolean;
-  explicacion: string | null;
 };
 
-export default function NotasProfesoresPage() {
+type RespuestaExcel = {
+  participante_id: string;
+  nombre: string;
+  nota: number;
+  fecha_finalizacion: string | null;
+  numero: number;
+  pregunta: string;
+  respuesta_marcada: string | null;
+  respuesta_correcta: string | null;
+  es_correcta: boolean;
+};
+
+export default function NotasIglesia2Page() {
   const [resultados, setResultados] = useState<Resultado[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [busqueda, setBusqueda] = useState("");
-const [alumnoSeleccionado, setAlumnoSeleccionado] =
-  useState<Resultado | null>(null);
-const [respuestasAlumno, setRespuestasAlumno] = useState<
-  RespuestaAlumno[]
->([]);
-const [cargandoRespuestas, setCargandoRespuestas] = useState(false);
+  const [alumnoSeleccionado, setAlumnoSeleccionado] =
+    useState<Resultado | null>(null);
+  const [respuestasAlumno, setRespuestasAlumno] =
+    useState<RespuestaAlumno[]>([]);
+  const [cargandoRespuestas, setCargandoRespuestas] = useState(false);
+  const [descargando, setDescargando] = useState(false);
 
   useEffect(() => {
-    cargarResultados();
+    void cargarResultados();
   }, []);
 
   async function cargarResultados() {
@@ -43,7 +57,7 @@ const [cargandoRespuestas, setCargandoRespuestas] = useState(false);
     setError("");
 
     const { data, error } = await supabase.rpc(
-      "obtener_resultados_profesores"
+      "iglesia2_obtener_resultados_profesores"
     );
 
     if (error) {
@@ -52,454 +66,232 @@ const [cargandoRespuestas, setCargandoRespuestas] = useState(false);
       return;
     }
 
-    setResultados(data ?? []);
+    setResultados((data ?? []) as Resultado[]);
     setCargando(false);
   }
 
   const resultadosFiltrados = resultados.filter((resultado) =>
-  resultado.nombre
-    .toLowerCase()
-    .includes(busqueda.toLowerCase().trim())
-);
-
-  function formatearFecha(fecha: string) {
-  return fecha || "";
-}
-
-  async function verRespuestas(alumno: Resultado) {
-  setAlumnoSeleccionado(alumno);
-  setCargandoRespuestas(true);
-  setRespuestasAlumno([]);
-
-  const { data, error } = await supabase.rpc(
-    "obtener_respuestas_profesor",
-    {
-      p_participante_id: alumno.participante_id,
-    }
+    resultado.nombre.toLowerCase().includes(busqueda.trim().toLowerCase())
   );
 
-  if (error) {
-    setError(error.message);
-    setCargandoRespuestas(false);
-    return;
+  function formatearFecha(fecha: string | null) {
+    if (!fecha) return "—";
+
+    return new Date(fecha).toLocaleString("es-PE", {
+      timeZone: "America/Lima",
+      dateStyle: "short",
+      timeStyle: "short",
+    });
   }
 
-  setRespuestasAlumno(data ?? []);
-  setCargandoRespuestas(false);
-}
+  async function verRespuestas(alumno: Resultado) {
+    setAlumnoSeleccionado(alumno);
+    setCargandoRespuestas(true);
+    setRespuestasAlumno([]);
+    setError("");
 
-  async function descargarExcel() {
-  setError("");
-
-  try {
-    const TAMANO_PAGINA = 1000;
-    let todasLasRespuestas: any[] = [];
-    let desde = 0;
-
-    while (true) {
-      const { data: respuestas, error } = await supabase
-        .rpc("obtener_todas_respuestas_profesor")
-        .range(desde, desde + TAMANO_PAGINA - 1);
-
-      if (error) {
-        setError(error.message);
-        return;
-      }
-
-      if (!respuestas || respuestas.length === 0) {
-        break;
-      }
-
-      todasLasRespuestas.push(...respuestas);
-
-      console.log(
-        `Página desde ${desde}: ${respuestas.length} respuestas`
-      );
-
-      console.log(
-        `Total acumulado: ${todasLasRespuestas.length}`
-      );
-
-      // Si recibimos menos de 1000,
-      // significa que ya llegamos al final.
-      if (respuestas.length < TAMANO_PAGINA) {
-        break;
-      }
-
-      desde += TAMANO_PAGINA;
-    }
-
-    const respuestas = todasLasRespuestas;
-
-    console.log(
-      "TOTAL RESPUESTAS DESCARGADAS:",
-      respuestas.length
+    const { data, error } = await supabase.rpc(
+      "iglesia2_obtener_respuestas_profesor",
+      { p_participante_id: alumno.participante_id }
     );
 
-    console.log(
-      "TOTAL ALUMNOS DESCARGADOS:",
-      new Set(
-        respuestas.map(
-          (respuesta: any) =>
-            respuesta.participante_id
-        )
-      ).size
-    );
-
-    if (respuestas.length === 0) {
-      setError(
-        "No existen respuestas para descargar."
-      );
+    if (error) {
+      setError(error.message);
+      setCargandoRespuestas(false);
       return;
     }
 
-    // ==============================
-    // OBTENER PREGUNTAS
-    // ==============================
-
-    const preguntas = Array.from(
-      new Map(
-        respuestas.map((respuesta: any) => [
-          respuesta.numero,
-          {
-            numero: respuesta.numero,
-            pregunta: respuesta.pregunta,
-          },
-        ])
-      ).values()
-    ).sort(
-      (a: any, b: any) =>
-        a.numero - b.numero
-    );
-
-    // ==============================
-    // OBTENER ALUMNOS
-    // ==============================
-
-    const alumnos = Array.from(
-      new Map(
-        respuestas.map((respuesta: any) => [
-          respuesta.participante_id,
-          {
-            participante_id:
-              respuesta.participante_id,
-            nombre: respuesta.nombre,
-            nota: respuesta.nota,
-            fecha_finalizacion:
-              respuesta.fecha_finalizacion,
-          },
-        ])
-      ).values()
-    );
-
-    // ==============================
-    // ENCABEZADOS
-    // ==============================
-
-    const encabezados = [
-      ...preguntas.map(
-        (pregunta: any) =>
-          `${pregunta.numero}. ${pregunta.pregunta}`
-      ),
-      "Puntuación",
-      "Nombres y Apellidos",
-      "Fecha",
-    ];
-
-    // ==============================
-// INDEXAR RESPUESTAS
-// ==============================
-
-const respuestasPorAlumno = new Map<
-  string,
-  Map<number, any>
->();
-
-for (const respuesta of respuestas) {
-  if (!respuestasPorAlumno.has(respuesta.participante_id)) {
-    respuestasPorAlumno.set(
-      respuesta.participante_id,
-      new Map()
-    );
+    setRespuestasAlumno((data ?? []) as RespuestaAlumno[]);
+    setCargandoRespuestas(false);
   }
 
-  respuestasPorAlumno
-    .get(respuesta.participante_id)!
-    .set(respuesta.numero, respuesta);
-}
+  async function descargarExcel() {
+    setError("");
+    setDescargando(true);
 
-// ==============================
-// CREAR FILAS
-// ==============================
+    try {
+      const tamanoPagina = 1000;
+      let desde = 0;
+      const todasLasRespuestas: RespuestaExcel[] = [];
 
-const filas = alumnos.map((alumno: any) => {
-  const respuestasDelAlumno =
-    respuestasPorAlumno.get(
-      alumno.participante_id
-    ) ?? new Map<number, any>();
+      while (true) {
+        const { data, error } = await supabase
+          .rpc("iglesia2_obtener_todas_respuestas_profesor")
+          .range(desde, desde + tamanoPagina - 1);
 
-  const respuestasPorPregunta = preguntas.map(
-    (pregunta: any) => {
-      const respuesta =
-        respuestasDelAlumno.get(
-          pregunta.numero
-        );
+        if (error) throw error;
 
-      return (
-        respuesta?.respuesta_marcada ?? ""
-      );
-    }
-  );
+        const pagina = (data ?? []) as RespuestaExcel[];
 
-  return [
-    ...respuestasPorPregunta,
-    alumno.nota,
-    alumno.nombre,
-    formatearFecha(
-      alumno.fecha_finalizacion
-    ),
-  ];
-});
+        if (pagina.length === 0) break;
 
-    // ==============================
-    // CREAR HOJA
-    // ==============================
+        todasLasRespuestas.push(...pagina);
 
-    const hoja = XLSX.utils.aoa_to_sheet([
-      encabezados,
-      ...filas,
-    ]);
+        if (pagina.length < tamanoPagina) break;
 
-    const ultimaFila =
-      filas.length + 1;
-
-    const ultimaColumna =
-      encabezados.length - 1;
-
-    const rango =
-      XLSX.utils.decode_range(
-        hoja["!ref"] as string
-      );
-
-    // ==============================
-    // BORDES
-    // ==============================
-
-    const borde = {
-      top: {
-        style: "thin",
-        color: { rgb: "D9D9E3" },
-      },
-      bottom: {
-        style: "thin",
-        color: { rgb: "D9D9E3" },
-      },
-      left: {
-        style: "thin",
-        color: { rgb: "D9D9E3" },
-      },
-      right: {
-        style: "thin",
-        color: { rgb: "D9D9E3" },
-      },
-    };
-
-    // ==============================
-    // ESTILOS
-    // ==============================
-
-    for (
-      let fila = rango.s.r;
-      fila <= rango.e.r;
-      fila++
-    ) {
-      for (
-        let columna = rango.s.c;
-        columna <= rango.e.c;
-        columna++
-      ) {
-        const celda =
-          hoja[
-            XLSX.utils.encode_cell({
-              r: fila,
-              c: columna,
-            })
-          ];
-
-        if (!celda) continue;
-
-        celda.s = {
-          border: borde,
-          alignment: {
-            vertical: "center",
-            horizontal:
-              fila === 0
-                ? "center"
-                : "left",
-            wrapText: true,
-          },
-          font: {
-            name: "Arial",
-            sz: 10,
-            bold: fila === 0,
-            color: {
-              rgb:
-                fila === 0
-                  ? "FFFFFF"
-                  : "222222",
-            },
-          },
-          fill: {
-            fgColor: {
-              rgb:
-                fila === 0
-                  ? "5E35B1"
-                  : fila % 2 === 0
-                  ? "F4F1FB"
-                  : "FFFFFF",
-            },
-          },
-        };
+        desde += tamanoPagina;
       }
-    }
 
-    // ==============================
-    // DESTACAR COLUMNAS FINALES
-    // ==============================
+      if (todasLasRespuestas.length === 0) {
+        setError("Todavía no hay respuestas para exportar.");
+        return;
+      }
 
-    for (
-      let fila = 1;
-      fila <= ultimaFila;
-      fila++
-    ) {
-      const celdaNota =
-        hoja[
-          XLSX.utils.encode_cell({
-            r: fila,
-            c: ultimaColumna - 2,
-          })
+      const preguntas = Array.from(
+        new Map(
+          todasLasRespuestas.map((r) => [
+            r.numero,
+            { numero: r.numero, pregunta: r.pregunta },
+          ])
+        ).values()
+      ).sort((a, b) => a.numero - b.numero);
+
+      const alumnos = Array.from(
+        new Map(
+          todasLasRespuestas.map((r) => [
+            r.participante_id,
+            {
+              participante_id: r.participante_id,
+              nombre: r.nombre,
+              nota: r.nota,
+              fecha_finalizacion: r.fecha_finalizacion,
+            },
+          ])
+        ).values()
+      );
+
+      const respuestasPorAlumno = new Map<
+        string,
+        Map<number, RespuestaExcel>
+      >();
+
+      for (const respuesta of todasLasRespuestas) {
+        if (!respuestasPorAlumno.has(respuesta.participante_id)) {
+          respuestasPorAlumno.set(
+            respuesta.participante_id,
+            new Map()
+          );
+        }
+
+        respuestasPorAlumno
+          .get(respuesta.participante_id)!
+          .set(respuesta.numero, respuesta);
+      }
+
+      const encabezados = [
+        ...preguntas.map(
+          (p) => `${p.numero}. ${p.pregunta}`
+        ),
+        "Puntuación",
+        "Nombres y Apellidos",
+        "Fecha de finalización",
+      ];
+
+      const filas = alumnos.map((alumno) => {
+        const respuestas =
+          respuestasPorAlumno.get(alumno.participante_id);
+
+        return [
+          ...preguntas.map(
+            (pregunta) =>
+              respuestas?.get(pregunta.numero)?.respuesta_marcada ?? ""
+          ),
+          alumno.nota,
+          alumno.nombre,
+          formatearFecha(alumno.fecha_finalizacion),
         ];
+      });
 
-      const celdaNombre =
-        hoja[
-          XLSX.utils.encode_cell({
+      const hoja = XLSX.utils.aoa_to_sheet([
+        encabezados,
+        ...filas,
+      ]);
+
+      hoja["!cols"] = [
+        ...preguntas.map(() => ({ wch: 35 })),
+        { wch: 14 },
+        { wch: 30 },
+        { wch: 22 },
+      ];
+
+      hoja["!rows"] = [
+        { hpt: 90 },
+        ...filas.map(() => ({ hpt: 25 })),
+      ];
+
+      const rango = XLSX.utils.decode_range(hoja["!ref"]!);
+
+      for (let fila = rango.s.r; fila <= rango.e.r; fila++) {
+        for (
+          let columna = rango.s.c;
+          columna <= rango.e.c;
+          columna++
+        ) {
+          const direccion = XLSX.utils.encode_cell({
             r: fila,
-            c: ultimaColumna - 1,
-          })
-        ];
+            c: columna,
+          });
 
-      const celdaFecha =
-        hoja[
-          XLSX.utils.encode_cell({
-            r: fila,
-            c: ultimaColumna,
-          })
-        ];
+          const celda = hoja[direccion];
+          if (!celda) continue;
 
-      [
-        celdaNota,
-        celdaNombre,
-        celdaFecha,
-      ].forEach((celda) => {
-        if (celda) {
           celda.s = {
-            ...celda.s,
             font: {
               name: "Arial",
               sz: 10,
-              bold: true,
+              bold: fila === 0,
               color: {
-                rgb: "222222",
+                rgb: fila === 0 ? "FFFFFF" : "222222",
               },
+            },
+            fill: {
+              fgColor: {
+                rgb:
+                  fila === 0
+                    ? "5E35B1"
+                    : fila % 2 === 0
+                      ? "F4F1FB"
+                      : "FFFFFF",
+              },
+            },
+            alignment: {
+              vertical: "center",
+              horizontal: fila === 0 ? "center" : "left",
+              wrapText: true,
+            },
+            border: {
+              top: { style: "thin", color: { rgb: "D9D9E3" } },
+              bottom: { style: "thin", color: { rgb: "D9D9E3" } },
+              left: { style: "thin", color: { rgb: "D9D9E3" } },
+              right: { style: "thin", color: { rgb: "D9D9E3" } },
             },
           };
         }
-      });
+      }
+
+      const libro = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(libro, hoja, "Examen Iglesia II");
+
+      XLSX.writeFile(libro, "resultados_examen_iglesia2.xlsx");
+    } catch (e) {
+      console.error("Error exportando resultados:", e);
+      setError(
+        e instanceof Error
+          ? e.message
+          : "No se pudo generar el archivo Excel."
+      );
+    } finally {
+      setDescargando(false);
     }
-
-    // ==============================
-    // ANCHO DE COLUMNAS
-    // ==============================
-
-    hoja["!cols"] = [
-      ...preguntas.map(() => ({
-        wch: 32,
-      })),
-      { wch: 14 },
-      { wch: 28 },
-      { wch: 14 },
-    ];
-
-    // ==============================
-    // ALTO DE FILAS
-    // ==============================
-
-    hoja["!rows"] = [
-      { hpt: 95 },
-      ...filas.map(() => ({
-        hpt: 28,
-      })),
-    ];
-
-    // ==============================
-    // FILTRO
-    // ==============================
-
-    hoja["!autofilter"] = {
-      ref: `A1:${XLSX.utils.encode_col(
-        ultimaColumna
-      )}${ultimaFila}`,
-    };
-
-    // ==============================
-    // CONGELAR ENCABEZADO
-    // ==============================
-
-    hoja["!freeze"] = {
-      xSplit: 0,
-      ySplit: 1,
-    };
-
-    // ==============================
-    // CREAR LIBRO
-    // ==============================
-
-    const libro =
-      XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(
-      libro,
-      hoja,
-      "Resultados"
-    );
-
-    // ==============================
-    // DESCARGAR
-    // ==============================
-
-    XLSX.writeFile(
-      libro,
-      "resultados_discipulado.xlsx"
-    );
-  } catch (error) {
-    console.error(
-      "Error descargando Excel:",
-      error
-    );
-
-    setError(
-      "Ocurrió un error al generar el archivo Excel."
-    );
   }
-}
 
   return (
     <main className="container">
       <section className="card hero">
-        <h1>Resultados del discipulado</h1>
-
+        <h1>Resultados del discipulado — Examen II</h1>
         <p className="muted">
-          Consulta las notas de los participantes que finalizaron el examen.
+          Consulta las notas y respuestas del segundo examen,
+          independientemente del examen original.
         </p>
       </section>
 
@@ -509,9 +301,9 @@ const filas = alumnos.map((alumno: any) => {
             className="primary"
             type="button"
             onClick={descargarExcel}
-            disabled={resultados.length === 0}
+            disabled={descargando || resultados.length === 0}
           >
-            Descargar Excel
+            {descargando ? "Generando Excel..." : "Descargar Excel"}
           </button>
 
           <button type="button" onClick={cargarResultados}>
@@ -521,29 +313,28 @@ const filas = alumnos.map((alumno: any) => {
       </section>
 
       <section className="card">
-        {cargando && <p>Cargando resultados…</p>}
+        {cargando && <p>Cargando resultados...</p>}
 
         {error && <p className="required">{error}</p>}
 
-        {!cargando && !error && resultados.length === 0 && (
+        {!cargando && resultados.length === 0 && !error && (
           <p className="muted">
             Todavía no hay participantes que hayan finalizado el examen.
           </p>
         )}
 
         <div className="search-box">
-  <label htmlFor="buscar-alumno">
-    Buscar alumno
-  </label>
-
-  <input
-    id="buscar-alumno"
-    type="search"
-    placeholder="Escribe el nombre del alumno..."
-    value={busqueda}
-    onChange={(event) => setBusqueda(event.target.value)}
-  />
-</div>
+          <label htmlFor="buscar-alumno-iglesia2">
+            Buscar alumno
+          </label>
+          <input
+            id="buscar-alumno-iglesia2"
+            type="search"
+            placeholder="Escribe el nombre del alumno..."
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+          />
+        </div>
 
         {!cargando && resultados.length > 0 && (
           <div className="table-wrapper">
@@ -559,14 +350,13 @@ const filas = alumnos.map((alumno: any) => {
                   <th>Acciones</th>
                 </tr>
               </thead>
-
               <tbody>
                 {resultadosFiltrados.map((resultado, index) => (
-                  <tr key={`${resultado.nombre}-${index}`}>
+                  <tr key={resultado.participante_id}>
                     <td>{index + 1}</td>
                     <td>{resultado.nombre}</td>
                     <td>{Number(resultado.nota).toFixed(1)}</td>
-                    <td>{resultado.porcentaje}%</td>
+                    <td>{Number(resultado.porcentaje).toFixed(1)}%</td>
                     <td>
                       <span
                         className={
@@ -582,26 +372,26 @@ const filas = alumnos.map((alumno: any) => {
                       {formatearFecha(resultado.fecha_finalizacion)}
                     </td>
                     <td>
-  <button
-    type="button"
-    onClick={() => verRespuestas(resultado)}
-  >
-    Ver respuestas
-  </button>
-</td>
+                      <button
+                        type="button"
+                        onClick={() => void verRespuestas(resultado)}
+                      >
+                        Ver respuestas
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-         {alumnoSeleccionado && (
+
+        {alumnoSeleccionado && (
           <div className="answer-review">
             <div className="answer-review-header">
               <h2>
                 Respuestas de {alumnoSeleccionado.nombre}
               </h2>
-
               <button
                 type="button"
                 onClick={() => {
@@ -613,9 +403,7 @@ const filas = alumnos.map((alumno: any) => {
               </button>
             </div>
 
-            {cargandoRespuestas && (
-              <p>Cargando respuestas…</p>
-            )}
+            {cargandoRespuestas && <p>Cargando respuestas...</p>}
 
             {!cargandoRespuestas &&
               respuestasAlumno.map((respuesta) => (
@@ -627,35 +415,35 @@ const filas = alumnos.map((alumno: any) => {
                       : "answer-incorrect"
                   }
                 >
-                  <strong>
-                    Pregunta {respuesta.numero}
-                  </strong>
-
+                  <strong>Pregunta {respuesta.numero}</strong>
                   <p>{respuesta.pregunta}</p>
 
                   <p>
                     Respuesta marcada:{" "}
-                    <strong>{respuesta.respuesta_marcada}</strong>
+                    <strong>
+                      {respuesta.respuesta_marcada
+                        ? `${respuesta.respuesta_marcada}. ${
+                            respuesta.alternativa_marcada ?? ""
+                          }`
+                        : "Sin responder"}
+                    </strong>
                   </p>
 
                   <p>
                     Respuesta correcta:{" "}
-                    <strong>{respuesta.respuesta_correcta}</strong>
+                    <strong>
+                      {respuesta.respuesta_correcta
+                        ? `${respuesta.respuesta_correcta}. ${
+                            respuesta.alternativa_correcta ?? ""
+                          }`
+                        : "No disponible"}
+                    </strong>
                   </p>
 
                   <p>
                     Resultado:{" "}
-                    {respuesta.es_correcta
-                      ? "Correcta"
-                      : "Incorrecta"}
+                    {respuesta.es_correcta ? "Correcta" : "Incorrecta"}
                   </p>
-
-                  {respuesta.explicacion && (
-                    <p>
-                      <strong>Explicación:</strong>{" "}
-                      {respuesta.explicacion}
-                    </p>
-                  )}
                 </article>
               ))}
           </div>
